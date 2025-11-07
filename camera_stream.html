@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background-color: #000;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #video {
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror effect for natural feel */
+        }
+        
+        #status {
+            position: fixed;
+            top: 20px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 18px;
+            z-index: 10;
+        }
+        
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            z-index: 10;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            backdrop-filter: blur(5px);
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay playsinline></video>
+    <div id="status">Click Start Camera to begin</div>
+    <div id="controls">
+        <button id="start-camera">Start Camera</button>
+        <button id="stop-camera" disabled>Stop Camera</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const video = document.getElementById('video');
+            const startButton = document.getElementById('start-camera');
+            const stopButton = document.getElementById('stop-camera');
+            const statusDiv = document.getElementById('status');
+            
+            let stream = null;
+            
+            // Start camera function
+            async function startCamera() {
+                try {
+                    statusDiv.textContent = 'Requesting camera access...';
+                    
+                    // Get user media with landscape orientation constraints
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 },
+                            facingMode: 'user'
+                        },
+                        audio: false
+                    });
+                    
+                    // Set the video source to the camera stream
+                    video.srcObject = stream;
+                    
+                    // Update UI
+                    statusDiv.textContent = 'Camera active';
+                    startButton.disabled = true;
+                    stopButton.disabled = false;
+                    
+                } catch (error) {
+                    console.error('Error accessing camera:', error);
+                    statusDiv.textContent = `Error: ${error.message}`;
+                }
+            }
+            
+            // Stop camera function
+            function stopCamera() {
+                if (stream) {
+                    // Stop all tracks in the stream
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                    
+                    // Clear the video element
+                    video.srcObject = null;
+                    
+                    // Update UI
+                    statusDiv.textContent = 'Camera stopped';
+                    startButton.disabled = false;
+                    stopButton.disabled = true;
+                }
+            }
+            
+            // Event listeners for buttons
+            startButton.addEventListener('click', startCamera);
+            stopButton.addEventListener('click', stopCamera);
+            
+            // Check if the browser supports the required APIs
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                statusDiv.textContent = 'Your browser does not support camera access';
+                startButton.disabled = true;
+            }
+        });
+    </script>
+</body>
+</html>
