@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera</title>
+    <title>VR Camera Display</title>
     <style>
         * {
             margin: 0;
@@ -18,13 +18,39 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            font-family: Arial, sans-serif;
         }
         
-        #video {
-            width: 100vw;
-            height: 100vh;
+        #video-container {
+            display: flex;
+            width: 100%;
+            height: 50%;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .video-wrapper {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .video-feed {
+            width: 100%;
+            height: 100%;
             object-fit: cover;
             transform: scaleX(-1); /* Mirror effect for natural feel */
+        }
+        
+        #single-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            display: none;
         }
         
         #status {
@@ -34,9 +60,9 @@
             width: 100%;
             text-align: center;
             color: white;
-            font-family: Arial, sans-serif;
             font-size: 18px;
             z-index: 10;
+            transition: opacity 0.5s ease;
         }
         
         #controls {
@@ -48,6 +74,20 @@
             justify-content: center;
             gap: 10px;
             z-index: 10;
+            transition: opacity 0.5s ease;
+            flex-wrap: wrap;
+        }
+        
+        .offset-controls {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            z-index: 10;
+            transition: opacity 0.5s ease;
         }
         
         button {
@@ -69,24 +109,75 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+        
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .offset-value {
+            color: white;
+            position: fixed;
+            top: 100px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            z-index: 10;
+            transition: opacity 0.5s ease;
+        }
     </style>
 </head>
 <body>
-    <video id="video" autoplay playsinline></video>
+    <div id="video-container">
+        <div class="video-wrapper" id="wrapper-left">
+            <video id="video-left" class="video-feed" autoplay playsinline></video>
+        </div>
+        <div class="video-wrapper" id="wrapper-right">
+            <video id="video-right" class="video-feed" autoplay playsinline></video>
+        </div>
+    </div>
+    
+    <video id="single-video" autoplay playsinline></video>
+    
     <div id="status">Click Start Camera to begin</div>
+    <div class="offset-value" id="offset-display">Offset: 0px</div>
+    
+    <div class="offset-controls">
+        <button id="offset-in">Move Apart</button>
+        <button id="offset-out">Move Together</button>
+        <button id="offset-reset">Reset Offset</button>
+    </div>
+    
     <div id="controls">
         <button id="start-camera">Start Camera</button>
         <button id="stop-camera" disabled>Stop Camera</button>
+        <button id="toggle-vr">Enable VR View</button>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const video = document.getElementById('video');
+            const videoLeft = document.getElementById('video-left');
+            const videoRight = document.getElementById('video-right');
+            const wrapperLeft = document.getElementById('wrapper-left');
+            const wrapperRight = document.getElementById('wrapper-right');
+            const singleVideo = document.getElementById('single-video');
             const startButton = document.getElementById('start-camera');
             const stopButton = document.getElementById('stop-camera');
+            const toggleVRButton = document.getElementById('toggle-vr');
+            const offsetInButton = document.getElementById('offset-in');
+            const offsetOutButton = document.getElementById('offset-out');
+            const offsetResetButton = document.getElementById('offset-reset');
             const statusDiv = document.getElementById('status');
+            const offsetDisplay = document.getElementById('offset-display');
+            const controlsDiv = document.getElementById('controls');
+            const offsetControls = document.querySelector('.offset-controls');
+            const videoContainer = document.getElementById('video-container');
             
             let stream = null;
+            let vrMode = false;
+            let hideControlsTimeout = null;
+            let currentOffset = 0;
+            const maxOffset = 200; // Maximum offset in pixels
             
             // Start camera function
             async function startCamera() {
@@ -103,13 +194,18 @@
                         audio: false
                     });
                     
-                    // Set the video source to the camera stream
-                    video.srcObject = stream;
+                    // Set the video source to all video elements
+                    videoLeft.srcObject = stream;
+                    videoRight.srcObject = stream;
+                    singleVideo.srcObject = stream;
                     
                     // Update UI
                     statusDiv.textContent = 'Camera active';
                     startButton.disabled = true;
                     stopButton.disabled = false;
+                    
+                    // Start the auto-hide timer
+                    resetHideControlsTimer();
                     
                 } catch (error) {
                     console.error('Error accessing camera:', error);
@@ -124,25 +220,132 @@
                     stream.getTracks().forEach(track => track.stop());
                     stream = null;
                     
-                    // Clear the video element
-                    video.srcObject = null;
+                    // Clear the video elements
+                    videoLeft.srcObject = null;
+                    videoRight.srcObject = null;
+                    singleVideo.srcObject = null;
                     
                     // Update UI
                     statusDiv.textContent = 'Camera stopped';
                     startButton.disabled = false;
                     stopButton.disabled = true;
+                    
+                    // Reset VR mode and offset
+                    vrMode = false;
+                    currentOffset = 0;
+                    updateVRMode();
+                    updateOffset();
                 }
             }
             
-            // Event listeners for buttons
+            // Toggle VR mode
+            function toggleVRMode() {
+                vrMode = !vrMode;
+                updateVRMode();
+                resetHideControlsTimer();
+            }
+            
+            // Update VR mode display
+            function updateVRMode() {
+                if (vrMode) {
+                    videoContainer.style.display = 'flex';
+                    singleVideo.style.display = 'none';
+                    offsetControls.style.display = 'flex';
+                    toggleVRButton.textContent = 'Disable VR View';
+                    statusDiv.textContent = 'VR View Enabled - Side by Side';
+                } else {
+                    videoContainer.style.display = 'none';
+                    singleVideo.style.display = 'block';
+                    offsetControls.style.display = 'none';
+                    toggleVRButton.textContent = 'Enable VR View';
+                    statusDiv.textContent = 'Camera active - Single View';
+                }
+                updateOffset();
+            }
+            
+            // Update video offset
+            function updateOffset() {
+                if (vrMode) {
+                    wrapperLeft.style.transform = `translateX(-${currentOffset}px)`;
+                    wrapperRight.style.transform = `translateX(${currentOffset}px)`;
+                    offsetDisplay.textContent = `Offset: ${currentOffset}px`;
+                } else {
+                    wrapperLeft.style.transform = 'translateX(0)';
+                    wrapperRight.style.transform = 'translateX(0)';
+                }
+            }
+            
+            // Increase offset (move videos apart)
+            function increaseOffset() {
+                if (currentOffset < maxOffset) {
+                    currentOffset += 10;
+                    updateOffset();
+                }
+                resetHideControlsTimer();
+            }
+            
+            // Decrease offset (move videos together)
+            function decreaseOffset() {
+                if (currentOffset > 0) {
+                    currentOffset -= 10;
+                    updateOffset();
+                }
+                resetHideControlsTimer();
+            }
+            
+            // Reset offset to center
+            function resetOffset() {
+                currentOffset = 0;
+                updateOffset();
+                resetHideControlsTimer();
+            }
+            
+            // Auto-hide controls functions
+            function hideControls() {
+                statusDiv.classList.add('hidden');
+                controlsDiv.classList.add('hidden');
+                offsetControls.classList.add('hidden');
+                offsetDisplay.classList.add('hidden');
+            }
+            
+            function showControls() {
+                statusDiv.classList.remove('hidden');
+                controlsDiv.classList.remove('hidden');
+                if (vrMode) {
+                    offsetControls.classList.remove('hidden');
+                    offsetDisplay.classList.remove('hidden');
+                }
+                resetHideControlsTimer();
+            }
+            
+            function resetHideControlsTimer() {
+                if (hideControlsTimeout) {
+                    clearTimeout(hideControlsTimeout);
+                }
+                hideControlsTimeout = setTimeout(hideControls, 5000);
+            }
+            
+            // Event listeners
             startButton.addEventListener('click', startCamera);
             stopButton.addEventListener('click', stopCamera);
+            toggleVRButton.addEventListener('click', toggleVRMode);
+            offsetInButton.addEventListener('click', increaseOffset);
+            offsetOutButton.addEventListener('click', decreaseOffset);
+            offsetResetButton.addEventListener('click', resetOffset);
+            
+            // Show controls when screen is clicked/tapped
+            document.body.addEventListener('click', showControls);
+            document.body.addEventListener('touchstart', showControls);
             
             // Check if the browser supports the required APIs
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 statusDiv.textContent = 'Your browser does not support camera access';
                 startButton.disabled = true;
+                toggleVRButton.disabled = true;
             }
+            
+            // Initialize with single view
+            updateVRMode();
         });
     </script>
 </body>
