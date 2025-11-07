@@ -42,14 +42,27 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
-            /* Remove mirror effect for back camera */
         }
         
         #single-video {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            /* Remove mirror effect for back camera */
+            display: none;
+        }
+        
+        .canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .effect-canvas {
+            width: 100%;
+            height: 100%;
             display: none;
         }
         
@@ -65,41 +78,55 @@
             transition: opacity 0.5s ease;
         }
         
-        #controls {
+        #controls-panel {
             position: fixed;
-            bottom: 20px;
+            bottom: 0;
             left: 0;
             width: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            z-index: 10;
+            transition: opacity 0.5s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .controls-row {
             display: flex;
             justify-content: center;
             gap: 10px;
-            z-index: 10;
-            transition: opacity 0.5s ease;
             flex-wrap: wrap;
         }
         
-        .offset-controls {
-            position: fixed;
-            top: 60px;
-            left: 0;
-            width: 100%;
+        .info-row {
             display: flex;
             justify-content: center;
-            gap: 10px;
-            z-index: 10;
-            transition: opacity 0.5s ease;
+            gap: 20px;
+            color: white;
+            font-size: 14px;
         }
         
-        .camera-controls {
-            position: fixed;
-            top: 120px;
-            left: 0;
+        .effect-controls {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 5px;
+        }
+        
+        .slider-container {
+            margin: 5px 0;
+        }
+        
+        .slider-container label {
+            display: block;
+            color: white;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        
+        input[type="range"] {
             width: 100%;
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            z-index: 10;
-            transition: opacity 0.5s ease;
         }
         
         button {
@@ -111,6 +138,7 @@
             cursor: pointer;
             font-size: 16px;
             backdrop-filter: blur(5px);
+            min-width: 120px;
         }
         
         button:hover {
@@ -122,31 +150,25 @@
             cursor: not-allowed;
         }
         
+        select {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            backdrop-filter: blur(5px);
+            min-width: 150px;
+        }
+        
+        option {
+            background: #333;
+            color: white;
+        }
+        
         .hidden {
             opacity: 0;
             pointer-events: none;
-        }
-        
-        .offset-value {
-            color: white;
-            position: fixed;
-            top: 100px;
-            left: 0;
-            width: 100%;
-            text-align: center;
-            z-index: 10;
-            transition: opacity 0.5s ease;
-        }
-        
-        .camera-info {
-            color: white;
-            position: fixed;
-            top: 160px;
-            left: 0;
-            width: 100%;
-            text-align: center;
-            z-index: 10;
-            transition: opacity 0.5s ease;
         }
     </style>
 </head>
@@ -154,54 +176,275 @@
     <div id="video-container">
         <div class="video-wrapper" id="wrapper-left">
             <video id="video-left" class="video-feed" autoplay playsinline></video>
+            <div class="canvas-container">
+                <canvas id="canvas-left" class="effect-canvas"></canvas>
+            </div>
         </div>
         <div class="video-wrapper" id="wrapper-right">
             <video id="video-right" class="video-feed" autoplay playsinline></video>
+            <div class="canvas-container">
+                <canvas id="canvas-right" class="effect-canvas"></canvas>
+            </div>
         </div>
     </div>
     
     <video id="single-video" autoplay playsinline></video>
+    <div class="canvas-container">
+        <canvas id="canvas-single" class="effect-canvas"></canvas>
+    </div>
     
     <div id="status">Click Start Camera to begin</div>
-    <div class="offset-value" id="offset-display">Offset: 0px</div>
-    <div class="camera-info" id="camera-display">Camera: Back</div>
     
-    <div class="camera-controls">
-        <button id="switch-camera">Switch to Front Camera</button>
-    </div>
-    
-    <div class="offset-controls">
-        <button id="offset-in">Move Apart</button>
-        <button id="offset-out">Move Together</button>
-        <button id="offset-reset">Reset Offset</button>
-    </div>
-    
-    <div id="controls">
-        <button id="start-camera">Start Camera</button>
-        <button id="stop-camera" disabled>Stop Camera</button>
-        <button id="toggle-vr">Enable VR View</button>
+    <div id="controls-panel">
+        <div class="controls-row">
+            <button id="start-camera">Start Camera</button>
+            <button id="stop-camera" disabled>Stop Camera</button>
+            <button id="toggle-vr">Enable VR View</button>
+            <button id="switch-camera">Switch Camera</button>
+        </div>
+        
+        <div class="controls-row">
+            <button id="offset-in">Move Apart</button>
+            <button id="offset-out">Move Together</button>
+            <button id="offset-reset">Reset Offset</button>
+            <select id="effect-select">
+                <option value="none">No Effect</option>
+                <option value="edges">Edge Detection</option>
+                <option value="grayscale">Grayscale</option>
+                <option value="invert">Invert Colors</option>
+            </select>
+        </div>
+        
+        <!-- Edge Detection Controls -->
+        <div id="edge-controls" class="effect-controls hidden">
+            <div class="slider-container">
+                <label for="edge-threshold">Edge Threshold: <span id="edge-threshold-value">50</span></label>
+                <input type="range" id="edge-threshold" min="1" max="255" value="50" step="1">
+            </div>
+            
+            <div class="slider-container">
+                <label for="neighborhood-size">Neighborhood Size: <span id="neighborhood-size-value">3x3</span></label>
+                <input type="range" id="neighborhood-size" min="1" max="3" value="1" step="1">
+            </div>
+            
+            <div class="slider-container">
+                <label for="min-neighbors">Noise Cleanup (Min Neighbors): <span id="min-neighbors-value">1</span></label>
+                <input type="range" id="min-neighbors" min="0" max="8" value="1" step="1">
+            </div>
+        </div>
+        
+        <div class="info-row">
+            <span id="offset-display">Offset: 0px</span>
+            <span id="camera-display">Camera: Back</span>
+            <span id="effect-display">Effect: None</span>
+        </div>
     </div>
 
     <script>
+        // Advanced Edge Detection Effect
+        const EdgeDetectionEffect = {
+            apply: function(video, canvas, threshold = 50, neighborhoodSize = 1, minNeighbors = 1) {
+                const ctx = canvas.getContext('2d');
+                const w = video.videoWidth;
+                const h = video.videoHeight;
+                
+                canvas.width = w;
+                canvas.height = h;
+                
+                // Draw video frame
+                ctx.drawImage(video, 0, 0, w, h);
+                
+                // Get image data
+                const imageData = ctx.getImageData(0, 0, w, h);
+                const data = imageData.data;
+                
+                // Convert to grayscale first
+                const grayscaleData = new Array(w * h);
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                    grayscaleData[i / 4] = gray;
+                }
+                
+                // Apply edge detection
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        const i = (y * w + x);
+                        const dataIndex = i * 4;
+
+                        const G_current = grayscaleData[i];
+                        let diffX = 0;
+                        let diffY = 0;
+
+                        // Difference in X direction (vs. right neighbor)
+                        if (x < w - 1) {
+                            const G_right = grayscaleData[i + 1];
+                            diffX = Math.abs(G_current - G_right);
+                        }
+
+                        // Difference in Y direction (vs. bottom neighbor)
+                        if (y < h - 1) {
+                            const G_bottom = grayscaleData[i + w];
+                            diffY = Math.abs(G_current - G_bottom);
+                        }
+
+                        const magnitude = diffX + diffY;
+                        let outputColor = magnitude > threshold ? 255 : 0;
+                        
+                        data[dataIndex] = data[dataIndex + 1] = data[dataIndex + 2] = outputColor;
+                        data[dataIndex + 3] = 255;
+                    }
+                }
+                
+                // Apply noise reduction if needed
+                if (minNeighbors > 0) {
+                    this.applyNoiseReduction(data, w, h, minNeighbors, neighborhoodSize);
+                }
+                
+                ctx.putImageData(imageData, 0, 0);
+            },
+            
+            applyNoiseReduction: function(data, w, h, minNeighbors, neighborhoodSize) {
+                const tempState = new Array(w * h);
+                for (let i = 0; i < data.length; i += 4) {
+                    tempState[i / 4] = data[i];
+                }
+
+                const getGrayscaleValue = (x, y) => {
+                    if (x < 0 || x >= w || y < 0 || y >= h) return 0;
+                    return tempState[y * w + x];
+                };
+
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        const i = (y * w + x);
+                        const dataIndex = i * 4;
+                        const currentPixelValue = tempState[i];
+                        
+                        let finalColor = currentPixelValue;
+
+                        if (currentPixelValue === 255) {
+                            let neighborEdgeCount = 0;
+                            
+                            for (let dy = -neighborhoodSize; dy <= neighborhoodSize; dy++) {
+                                for (let dx = -neighborhoodSize; dx <= neighborhoodSize; dx++) {
+                                    if (dx === 0 && dy === 0) continue;
+                                    
+                                    const neighborValue = getGrayscaleValue(x + dx, y + dy);
+                                    if (neighborValue === 255) {
+                                        neighborEdgeCount++;
+                                    }
+                                }
+                            }
+
+                            if (neighborEdgeCount < minNeighbors) {
+                                finalColor = 0;
+                            }
+                        }
+                        
+                        data[dataIndex] = data[dataIndex + 1] = data[dataIndex + 2] = finalColor;
+                        data[dataIndex + 3] = 255;
+                    }
+                }
+            }
+        };
+
+        // Effects Module
+        const Effects = {
+            none: {
+                apply: function(video, canvas) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+            },
+            
+            edges: {
+                apply: function(video, canvas, threshold, neighborhoodSize, minNeighbors) {
+                    EdgeDetectionEffect.apply(video, canvas, threshold, neighborhoodSize, minNeighbors);
+                }
+            },
+            
+            grayscale: {
+                apply: function(video, canvas) {
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imageData.data;
+                    
+                    for (let i = 0; i < data.length; i += 4) {
+                        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                        data[i] = avg;
+                        data[i + 1] = avg;
+                        data[i + 2] = avg;
+                    }
+                    
+                    ctx.putImageData(imageData, 0, 0);
+                }
+            },
+            
+            invert: {
+                apply: function(video, canvas) {
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imageData.data;
+                    
+                    for (let i = 0; i < data.length; i += 4) {
+                        data[i] = 255 - data[i];
+                        data[i + 1] = 255 - data[i + 1];
+                        data[i + 2] = 255 - data[i + 2];
+                    }
+                    
+                    ctx.putImageData(imageData, 0, 0);
+                }
+            }
+        };
+
+        // Main Application
         document.addEventListener('DOMContentLoaded', function() {
             const videoLeft = document.getElementById('video-left');
             const videoRight = document.getElementById('video-right');
+            const singleVideo = document.getElementById('single-video');
+            const canvasLeft = document.getElementById('canvas-left');
+            const canvasRight = document.getElementById('canvas-right');
+            const canvasSingle = document.getElementById('canvas-single');
             const wrapperLeft = document.getElementById('wrapper-left');
             const wrapperRight = document.getElementById('wrapper-right');
-            const singleVideo = document.getElementById('single-video');
+            
             const startButton = document.getElementById('start-camera');
             const stopButton = document.getElementById('stop-camera');
             const toggleVRButton = document.getElementById('toggle-vr');
+            const switchCameraButton = document.getElementById('switch-camera');
             const offsetInButton = document.getElementById('offset-in');
             const offsetOutButton = document.getElementById('offset-out');
             const offsetResetButton = document.getElementById('offset-reset');
-            const switchCameraButton = document.getElementById('switch-camera');
+            const effectSelect = document.getElementById('effect-select');
+            
+            // Edge detection controls
+            const edgeControls = document.getElementById('edge-controls');
+            const edgeThreshold = document.getElementById('edge-threshold');
+            const edgeThresholdValue = document.getElementById('edge-threshold-value');
+            const neighborhoodSize = document.getElementById('neighborhood-size');
+            const neighborhoodSizeValue = document.getElementById('neighborhood-size-value');
+            const minNeighbors = document.getElementById('min-neighbors');
+            const minNeighborsValue = document.getElementById('min-neighbors-value');
+            
             const statusDiv = document.getElementById('status');
             const offsetDisplay = document.getElementById('offset-display');
             const cameraDisplay = document.getElementById('camera-display');
-            const controlsDiv = document.getElementById('controls');
-            const offsetControls = document.querySelector('.offset-controls');
-            const cameraControls = document.querySelector('.camera-controls');
+            const effectDisplay = document.getElementById('effect-display');
+            const controlsPanel = document.getElementById('controls-panel');
+            
             const videoContainer = document.getElementById('video-container');
             
             let stream = null;
@@ -209,14 +452,21 @@
             let hideControlsTimeout = null;
             let currentOffset = 0;
             let usingBackCamera = true;
-            const maxOffset = 200; // Maximum offset in pixels
+            let currentEffect = 'none';
+            let animationFrameId = null;
+            const maxOffset = 200;
             
-            // Start camera function with back camera by default
+            // Helper function to format box size display
+            function formatBoxSize(n) {
+                const size = 2 * n + 1;
+                return `${size}x${size}`;
+            }
+            
+            // Start camera function
             async function startCamera() {
                 try {
                     statusDiv.textContent = 'Requesting camera access...';
                     
-                    // Get user media with back camera by default
                     stream = await navigator.mediaDevices.getUserMedia({
                         video: {
                             width: { ideal: 1920 },
@@ -226,61 +476,110 @@
                         audio: false
                     });
                     
-                    // Set the video source to all video elements
-                    videoLeft.srcObject = stream;
-                    videoRight.srcObject = stream;
-                    singleVideo.srcObject = stream;
-                    
-                    // Update UI
-                    statusDiv.textContent = 'Camera active';
-                    startButton.disabled = true;
-                    stopButton.disabled = false;
-                    updateCameraDisplay();
-                    
-                    // Start the auto-hide timer
-                    resetHideControlsTimer();
+                    setupVideoStream();
+                    startEffectRendering();
                     
                 } catch (error) {
                     console.error('Error accessing back camera:', error);
-                    
-                    // If back camera fails, try any available camera
-                    try {
-                        statusDiv.textContent = 'Back camera not available, trying any camera...';
-                        stream = await navigator.mediaDevices.getUserMedia({
-                            video: true,
-                            audio: false
-                        });
-                        
-                        videoLeft.srcObject = stream;
-                        videoRight.srcObject = stream;
-                        singleVideo.srcObject = stream;
-                        
-                        statusDiv.textContent = 'Camera active';
-                        startButton.disabled = true;
-                        stopButton.disabled = false;
-                        usingBackCamera = false;
-                        updateCameraDisplay();
-                        resetHideControlsTimer();
-                    } catch (fallbackError) {
-                        console.error('Error accessing any camera:', fallbackError);
-                        statusDiv.textContent = `Error: ${fallbackError.message}`;
-                    }
+                    tryFallbackCamera();
                 }
             }
             
-            // Switch between front and back cameras
+            function setupVideoStream() {
+                videoLeft.srcObject = stream;
+                videoRight.srcObject = stream;
+                singleVideo.srcObject = stream;
+                
+                statusDiv.textContent = 'Camera active';
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                updateCameraDisplay();
+                resetHideControlsTimer();
+            }
+            
+            async function tryFallbackCamera() {
+                try {
+                    statusDiv.textContent = 'Back camera not available, trying any camera...';
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: false
+                    });
+                    
+                    setupVideoStream();
+                    usingBackCamera = false;
+                    updateCameraDisplay();
+                } catch (fallbackError) {
+                    console.error('Error accessing any camera:', fallbackError);
+                    statusDiv.textContent = `Error: ${fallbackError.message}`;
+                }
+            }
+            
+            // Effect rendering
+            function startEffectRendering() {
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                }
+                
+                function renderEffects() {
+                    if (stream && currentEffect !== 'none') {
+                        const effect = Effects[currentEffect];
+                        if (effect) {
+                            if (vrMode) {
+                                if (currentEffect === 'edges') {
+                                    effect.apply(
+                                        videoLeft, 
+                                        canvasLeft, 
+                                        parseInt(edgeThreshold.value),
+                                        parseInt(neighborhoodSize.value),
+                                        parseInt(minNeighbors.value)
+                                    );
+                                    effect.apply(
+                                        videoRight, 
+                                        canvasRight, 
+                                        parseInt(edgeThreshold.value),
+                                        parseInt(neighborhoodSize.value),
+                                        parseInt(minNeighbors.value)
+                                    );
+                                } else {
+                                    effect.apply(videoLeft, canvasLeft);
+                                    effect.apply(videoRight, canvasRight);
+                                }
+                                canvasLeft.style.display = 'block';
+                                canvasRight.style.display = 'block';
+                            } else {
+                                if (currentEffect === 'edges') {
+                                    effect.apply(
+                                        singleVideo, 
+                                        canvasSingle, 
+                                        parseInt(edgeThreshold.value),
+                                        parseInt(neighborhoodSize.value),
+                                        parseInt(minNeighbors.value)
+                                    );
+                                } else {
+                                    effect.apply(singleVideo, canvasSingle);
+                                }
+                                canvasSingle.style.display = 'block';
+                            }
+                        }
+                    } else {
+                        // Hide canvas when no effect
+                        canvasLeft.style.display = 'none';
+                        canvasRight.style.display = 'none';
+                        canvasSingle.style.display = 'none';
+                    }
+                    animationFrameId = requestAnimationFrame(renderEffects);
+                }
+                renderEffects();
+            }
+            
+            // Switch camera function
             async function switchCamera() {
                 if (stream) {
-                    // Stop current stream
                     stream.getTracks().forEach(track => track.stop());
-                    
-                    // Toggle camera mode
                     usingBackCamera = !usingBackCamera;
                     
                     try {
                         statusDiv.textContent = 'Switching camera...';
-                        
-                        // Get new stream with selected camera
                         stream = await navigator.mediaDevices.getUserMedia({
                             video: {
                                 width: { ideal: 1920 },
@@ -290,49 +589,63 @@
                             audio: false
                         });
                         
-                        // Update video elements with new stream
-                        videoLeft.srcObject = stream;
-                        videoRight.srcObject = stream;
-                        singleVideo.srcObject = stream;
-                        
-                        updateCameraDisplay();
-                        resetHideControlsTimer();
-                        
+                        setupVideoStream();
                     } catch (error) {
                         console.error('Error switching camera:', error);
                         statusDiv.textContent = `Error switching camera: ${error.message}`;
-                        
-                        // Revert camera preference if switch failed
                         usingBackCamera = !usingBackCamera;
                         updateCameraDisplay();
                     }
                 }
             }
             
-            // Update camera display text
             function updateCameraDisplay() {
                 cameraDisplay.textContent = `Camera: ${usingBackCamera ? 'Back' : 'Front'}`;
                 switchCameraButton.textContent = `Switch to ${usingBackCamera ? 'Front' : 'Back'} Camera`;
             }
             
+            // Effect handling
+            function changeEffect() {
+                currentEffect = effectSelect.value;
+                effectDisplay.textContent = `Effect: ${currentEffect.charAt(0).toUpperCase() + currentEffect.slice(1)}`;
+                
+                // Show/hide edge detection controls
+                if (currentEffect === 'edges') {
+                    edgeControls.classList.remove('hidden');
+                } else {
+                    edgeControls.classList.add('hidden');
+                }
+                
+                startEffectRendering();
+                resetHideControlsTimer();
+            }
+            
+            // Edge detection parameter updates
+            function updateEdgeParams() {
+                edgeThresholdValue.textContent = edgeThreshold.value;
+                neighborhoodSizeValue.textContent = formatBoxSize(parseInt(neighborhoodSize.value));
+                minNeighborsValue.textContent = minNeighbors.value;
+                resetHideControlsTimer();
+            }
+            
             // Stop camera function
             function stopCamera() {
                 if (stream) {
-                    // Stop all tracks in the stream
                     stream.getTracks().forEach(track => track.stop());
                     stream = null;
                     
-                    // Clear the video elements
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                    }
+                    
                     videoLeft.srcObject = null;
                     videoRight.srcObject = null;
                     singleVideo.srcObject = null;
                     
-                    // Update UI
                     statusDiv.textContent = 'Camera stopped';
                     startButton.disabled = false;
                     stopButton.disabled = true;
                     
-                    // Reset VR mode and offset
                     vrMode = false;
                     currentOffset = 0;
                     updateVRMode();
@@ -340,34 +653,32 @@
                 }
             }
             
-            // Toggle VR mode
+            // VR mode and offset functions
             function toggleVRMode() {
                 vrMode = !vrMode;
                 updateVRMode();
                 resetHideControlsTimer();
             }
             
-            // Update VR mode display
             function updateVRMode() {
                 if (vrMode) {
                     videoContainer.style.display = 'flex';
                     singleVideo.style.display = 'none';
-                    offsetControls.style.display = 'flex';
-                    cameraControls.style.display = 'flex';
+                    canvasSingle.style.display = 'none';
                     toggleVRButton.textContent = 'Disable VR View';
                     statusDiv.textContent = 'VR View Enabled - Side by Side';
                 } else {
                     videoContainer.style.display = 'none';
                     singleVideo.style.display = 'block';
-                    offsetControls.style.display = 'none';
-                    cameraControls.style.display = 'none';
+                    canvasLeft.style.display = 'none';
+                    canvasRight.style.display = 'none';
                     toggleVRButton.textContent = 'Enable VR View';
                     statusDiv.textContent = 'Camera active - Single View';
                 }
                 updateOffset();
+                startEffectRendering();
             }
             
-            // Update video offset
             function updateOffset() {
                 if (vrMode) {
                     wrapperLeft.style.transform = `translateX(-${currentOffset}px)`;
@@ -379,7 +690,6 @@
                 }
             }
             
-            // Increase offset (move videos apart)
             function increaseOffset() {
                 if (currentOffset < maxOffset) {
                     currentOffset += 10;
@@ -388,7 +698,6 @@
                 resetHideControlsTimer();
             }
             
-            // Decrease offset (move videos together)
             function decreaseOffset() {
                 if (currentOffset > 0) {
                     currentOffset -= 10;
@@ -397,32 +706,21 @@
                 resetHideControlsTimer();
             }
             
-            // Reset offset to center
             function resetOffset() {
                 currentOffset = 0;
                 updateOffset();
                 resetHideControlsTimer();
             }
             
-            // Auto-hide controls functions
+            // Auto-hide controls
             function hideControls() {
+                controlsPanel.classList.add('hidden');
                 statusDiv.classList.add('hidden');
-                controlsDiv.classList.add('hidden');
-                offsetControls.classList.add('hidden');
-                offsetDisplay.classList.add('hidden');
-                cameraControls.classList.add('hidden');
-                cameraDisplay.classList.add('hidden');
             }
             
             function showControls() {
+                controlsPanel.classList.remove('hidden');
                 statusDiv.classList.remove('hidden');
-                controlsDiv.classList.remove('hidden');
-                if (vrMode) {
-                    offsetControls.classList.remove('hidden');
-                    offsetDisplay.classList.remove('hidden');
-                    cameraControls.classList.remove('hidden');
-                    cameraDisplay.classList.remove('hidden');
-                }
                 resetHideControlsTimer();
             }
             
@@ -437,16 +735,20 @@
             startButton.addEventListener('click', startCamera);
             stopButton.addEventListener('click', stopCamera);
             toggleVRButton.addEventListener('click', toggleVRMode);
+            switchCameraButton.addEventListener('click', switchCamera);
             offsetInButton.addEventListener('click', increaseOffset);
             offsetOutButton.addEventListener('click', decreaseOffset);
             offsetResetButton.addEventListener('click', resetOffset);
-            switchCameraButton.addEventListener('click', switchCamera);
+            effectSelect.addEventListener('change', changeEffect);
             
-            // Show controls when screen is clicked/tapped
+            // Edge detection parameter listeners
+            edgeThreshold.addEventListener('input', updateEdgeParams);
+            neighborhoodSize.addEventListener('input', updateEdgeParams);
+            minNeighbors.addEventListener('input', updateEdgeParams);
+            
             document.body.addEventListener('click', showControls);
             document.body.addEventListener('touchstart', showControls);
             
-            // Check if the browser supports the required APIs
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 statusDiv.textContent = 'Your browser does not support camera access';
                 startButton.disabled = true;
@@ -454,7 +756,8 @@
                 switchCameraButton.disabled = true;
             }
             
-            // Initialize with single view
+            // Initialize UI
+            updateEdgeParams();
             updateVRMode();
         });
     </script>
