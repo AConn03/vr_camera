@@ -24,13 +24,13 @@
         #video-container {
             display: flex;
             width: 100%;
-            height: 50%;
+            height: 100%;
             justify-content: center;
             align-items: center;
         }
         
         .video-wrapper {
-            width: 100%;
+            width: 50%;
             height: 100%;
             display: flex;
             justify-content: center;
@@ -42,14 +42,14 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transform: scaleX(-1); /* Mirror effect for natural feel */
+            /* Remove mirror effect for back camera */
         }
         
         #single-video {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transform: scaleX(-1);
+            /* Remove mirror effect for back camera */
             display: none;
         }
         
@@ -81,6 +81,18 @@
         .offset-controls {
             position: fixed;
             top: 60px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            z-index: 10;
+            transition: opacity 0.5s ease;
+        }
+        
+        .camera-controls {
+            position: fixed;
+            top: 120px;
             left: 0;
             width: 100%;
             display: flex;
@@ -125,6 +137,17 @@
             z-index: 10;
             transition: opacity 0.5s ease;
         }
+        
+        .camera-info {
+            color: white;
+            position: fixed;
+            top: 160px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            z-index: 10;
+            transition: opacity 0.5s ease;
+        }
     </style>
 </head>
 <body>
@@ -141,6 +164,11 @@
     
     <div id="status">Click Start Camera to begin</div>
     <div class="offset-value" id="offset-display">Offset: 0px</div>
+    <div class="camera-info" id="camera-display">Camera: Back</div>
+    
+    <div class="camera-controls">
+        <button id="switch-camera">Switch to Front Camera</button>
+    </div>
     
     <div class="offset-controls">
         <button id="offset-in">Move Apart</button>
@@ -167,29 +195,33 @@
             const offsetInButton = document.getElementById('offset-in');
             const offsetOutButton = document.getElementById('offset-out');
             const offsetResetButton = document.getElementById('offset-reset');
+            const switchCameraButton = document.getElementById('switch-camera');
             const statusDiv = document.getElementById('status');
             const offsetDisplay = document.getElementById('offset-display');
+            const cameraDisplay = document.getElementById('camera-display');
             const controlsDiv = document.getElementById('controls');
             const offsetControls = document.querySelector('.offset-controls');
+            const cameraControls = document.querySelector('.camera-controls');
             const videoContainer = document.getElementById('video-container');
             
             let stream = null;
             let vrMode = false;
             let hideControlsTimeout = null;
             let currentOffset = 0;
+            let usingBackCamera = true;
             const maxOffset = 200; // Maximum offset in pixels
             
-            // Start camera function
+            // Start camera function with back camera by default
             async function startCamera() {
                 try {
                     statusDiv.textContent = 'Requesting camera access...';
                     
-                    // Get user media with landscape orientation constraints
+                    // Get user media with back camera by default
                     stream = await navigator.mediaDevices.getUserMedia({
                         video: {
                             width: { ideal: 1920 },
                             height: { ideal: 1080 },
-                            facingMode: 'user'
+                            facingMode: usingBackCamera ? { exact: 'environment' } : 'user'
                         },
                         audio: false
                     });
@@ -203,14 +235,84 @@
                     statusDiv.textContent = 'Camera active';
                     startButton.disabled = true;
                     stopButton.disabled = false;
+                    updateCameraDisplay();
                     
                     // Start the auto-hide timer
                     resetHideControlsTimer();
                     
                 } catch (error) {
-                    console.error('Error accessing camera:', error);
-                    statusDiv.textContent = `Error: ${error.message}`;
+                    console.error('Error accessing back camera:', error);
+                    
+                    // If back camera fails, try any available camera
+                    try {
+                        statusDiv.textContent = 'Back camera not available, trying any camera...';
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: true,
+                            audio: false
+                        });
+                        
+                        videoLeft.srcObject = stream;
+                        videoRight.srcObject = stream;
+                        singleVideo.srcObject = stream;
+                        
+                        statusDiv.textContent = 'Camera active';
+                        startButton.disabled = true;
+                        stopButton.disabled = false;
+                        usingBackCamera = false;
+                        updateCameraDisplay();
+                        resetHideControlsTimer();
+                    } catch (fallbackError) {
+                        console.error('Error accessing any camera:', fallbackError);
+                        statusDiv.textContent = `Error: ${fallbackError.message}`;
+                    }
                 }
+            }
+            
+            // Switch between front and back cameras
+            async function switchCamera() {
+                if (stream) {
+                    // Stop current stream
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    // Toggle camera mode
+                    usingBackCamera = !usingBackCamera;
+                    
+                    try {
+                        statusDiv.textContent = 'Switching camera...';
+                        
+                        // Get new stream with selected camera
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: {
+                                width: { ideal: 1920 },
+                                height: { ideal: 1080 },
+                                facingMode: usingBackCamera ? { exact: 'environment' } : 'user'
+                            },
+                            audio: false
+                        });
+                        
+                        // Update video elements with new stream
+                        videoLeft.srcObject = stream;
+                        videoRight.srcObject = stream;
+                        singleVideo.srcObject = stream;
+                        
+                        updateCameraDisplay();
+                        resetHideControlsTimer();
+                        
+                    } catch (error) {
+                        console.error('Error switching camera:', error);
+                        statusDiv.textContent = `Error switching camera: ${error.message}`;
+                        
+                        // Revert camera preference if switch failed
+                        usingBackCamera = !usingBackCamera;
+                        updateCameraDisplay();
+                    }
+                }
+            }
+            
+            // Update camera display text
+            function updateCameraDisplay() {
+                cameraDisplay.textContent = `Camera: ${usingBackCamera ? 'Back' : 'Front'}`;
+                switchCameraButton.textContent = `Switch to ${usingBackCamera ? 'Front' : 'Back'} Camera`;
             }
             
             // Stop camera function
@@ -251,12 +353,14 @@
                     videoContainer.style.display = 'flex';
                     singleVideo.style.display = 'none';
                     offsetControls.style.display = 'flex';
+                    cameraControls.style.display = 'flex';
                     toggleVRButton.textContent = 'Disable VR View';
                     statusDiv.textContent = 'VR View Enabled - Side by Side';
                 } else {
                     videoContainer.style.display = 'none';
                     singleVideo.style.display = 'block';
                     offsetControls.style.display = 'none';
+                    cameraControls.style.display = 'none';
                     toggleVRButton.textContent = 'Enable VR View';
                     statusDiv.textContent = 'Camera active - Single View';
                 }
@@ -306,6 +410,8 @@
                 controlsDiv.classList.add('hidden');
                 offsetControls.classList.add('hidden');
                 offsetDisplay.classList.add('hidden');
+                cameraControls.classList.add('hidden');
+                cameraDisplay.classList.add('hidden');
             }
             
             function showControls() {
@@ -314,6 +420,8 @@
                 if (vrMode) {
                     offsetControls.classList.remove('hidden');
                     offsetDisplay.classList.remove('hidden');
+                    cameraControls.classList.remove('hidden');
+                    cameraDisplay.classList.remove('hidden');
                 }
                 resetHideControlsTimer();
             }
@@ -332,6 +440,7 @@
             offsetInButton.addEventListener('click', increaseOffset);
             offsetOutButton.addEventListener('click', decreaseOffset);
             offsetResetButton.addEventListener('click', resetOffset);
+            switchCameraButton.addEventListener('click', switchCamera);
             
             // Show controls when screen is clicked/tapped
             document.body.addEventListener('click', showControls);
@@ -342,6 +451,7 @@
                 statusDiv.textContent = 'Your browser does not support camera access';
                 startButton.disabled = true;
                 toggleVRButton.disabled = true;
+                switchCameraButton.disabled = true;
             }
             
             // Initialize with single view
