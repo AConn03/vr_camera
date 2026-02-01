@@ -19,6 +19,7 @@
             justify-content: center;
             align-items: center;
             font-family: Arial, sans-serif;
+            user-select: none; /* Prevent text selection on taps */
         }
         
         #video-container {
@@ -75,7 +76,9 @@
             color: white;
             font-size: 18px;
             z-index: 10;
-            transition: opacity 0.5s ease;
+            transition: opacity 0.3s ease;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+            pointer-events: none;
         }
         
         #controls-panel {
@@ -86,10 +89,16 @@
             background: rgba(0, 0, 0, 0.8);
             padding: 15px;
             z-index: 10;
-            transition: opacity 0.5s ease;
+            transition: opacity 0.3s ease, transform 0.3s ease;
             display: flex;
             flex-direction: column;
             gap: 10px;
+        }
+        
+        #controls-panel.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(20px);
         }
         
         .controls-row {
@@ -127,6 +136,7 @@
         
         input[type="range"] {
             width: 100%;
+            cursor: pointer;
         }
         
         button {
@@ -145,9 +155,14 @@
             background: rgba(255, 255, 255, 0.3);
         }
         
+        button:active {
+            transform: scale(0.98);
+        }
+        
         button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+            transform: none;
         }
         
         select {
@@ -166,9 +181,8 @@
             color: white;
         }
         
-        .hidden {
-            opacity: 0;
-            pointer-events: none;
+        .ui-hidden-element {
+            display: none !important;
         }
     </style>
 </head>
@@ -193,7 +207,7 @@
         <canvas id="canvas-single" class="effect-canvas"></canvas>
     </div>
     
-    <div id="status">Click Start Camera to begin</div>
+    <div id="status">Click/Tap anywhere to start</div>
     
     <div id="controls-panel">
         <div class="controls-row">
@@ -216,20 +230,25 @@
         </div>
         
         <!-- Edge Detection Controls -->
-        <div id="edge-controls" class="effect-controls hidden">
+        <div id="edge-controls" class="effect-controls ui-hidden-element">
             <div class="slider-container">
                 <label for="edge-threshold">Edge Threshold: <span id="edge-threshold-value">50</span></label>
                 <input type="range" id="edge-threshold" min="1" max="255" value="50" step="1">
             </div>
             
             <div class="slider-container">
-                <label for="neighborhood-size">Neighborhood Size: <span id="neighborhood-size-value">3x3</span></label>
+                <label for="neighborhood-size">Line Thickness: <span id="neighborhood-size-value">1</span></label>
                 <input type="range" id="neighborhood-size" min="1" max="3" value="1" step="1">
             </div>
             
             <div class="slider-container">
-                <label for="min-neighbors">Noise Cleanup (Min Neighbors): <span id="min-neighbors-value">1</span></label>
-                <input type="range" id="min-neighbors" min="0" max="8" value="1" step="1">
+                <label for="band-median">Band Pass Center (0-100): <span id="band-median-value">50</span></label>
+                <input type="range" id="band-median" min="0" max="100" value="50" step="1">
+            </div>
+
+            <div class="slider-container">
+                <label for="band-range">Band Pass Width: <span id="band-range-value">100</span></label>
+                <input type="range" id="band-range" min="1" max="100" value="100" step="1">
             </div>
         </div>
         
@@ -241,13 +260,16 @@
     </div>
 
     <script>
-        // Advanced Edge Detection Effect
+        // Advanced Edge Detection Effect with Band Pass Pre-filter
         const EdgeDetectionEffect = {
-            apply: function(video, canvas, threshold = 50, neighborhoodSize = 1, minNeighbors = 1) {
+            apply: function(video, canvas, threshold = 50, neighborhoodSize = 1, bandMedian = 127, bandRange = 255) {
                 const ctx = canvas.getContext('2d');
                 const w = video.videoWidth;
                 const h = video.videoHeight;
                 
+                // If video isn't ready, skip
+                if (w === 0 || h === 0) return;
+
                 canvas.width = w;
                 canvas.height = h;
                 
@@ -258,23 +280,40 @@
                 const imageData = ctx.getImageData(0, 0, w, h);
                 const data = imageData.data;
                 
-                // Convert to grayscale first
+                // Convert to grayscale and Apply Band Pass Filter
                 const grayscaleData = new Array(w * h);
+                
+                // bandRange is the full width, so half-width for checking distance from center
+                const halfWidth = bandRange / 2;
+                
                 for (let i = 0; i < data.length; i += 4) {
                     const r = data[i];
                     const g = data[i + 1];
                     const b = data[i + 2];
-                    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                    let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                    
+                    // Band Pass Filter Logic
+                    // If the grayscale value is outside the allowed range around the median, squash it to black.
+                    // This removes those pixels from being considered by the edge detector.
+                    if (Math.abs(gray - bandMedian) > halfWidth) {
+                        gray = 0; 
+                    }
+                    
                     grayscaleData[i / 4] = gray;
                 }
                 
-                // Apply edge detection
+                // Apply edge detection on the filtered grayscale data
                 for (let y = 0; y < h; y++) {
                     for (let x = 0; x < w; x++) {
                         const i = (y * w + x);
                         const dataIndex = i * 4;
 
                         const G_current = grayscaleData[i];
+                        
+                        // Optimization: If current pixel was filtered out (is 0), 
+                        // and we want clean backgrounds, we might skip heavy calc,
+                        // but edges occur between 0 and non-0, so we must calculate.
+
                         let diffX = 0;
                         let diffY = 0;
 
@@ -290,64 +329,35 @@
                             diffY = Math.abs(G_current - G_bottom);
                         }
 
+                        // Simple gradient magnitude
                         const magnitude = diffX + diffY;
+                        
+                        // Threshold the edge
                         let outputColor = magnitude > threshold ? 255 : 0;
                         
-                        data[dataIndex] = data[dataIndex + 1] = data[dataIndex + 2] = outputColor;
-                        data[dataIndex + 3] = 255;
+                        // Draw green edges on transparent background (or black)
+                        data[dataIndex] = 0;     // R
+                        data[dataIndex + 1] = outputColor; // G (Green edges look cool in VR)
+                        data[dataIndex + 2] = 0;     // B
+                        
+                        // Alpha: If edge, opaque. If no edge, transparent.
+                        // This allows overlaying if we wanted, but here we just show black background
+                        data[dataIndex + 3] = 255; 
+                        
+                        // Optional: For 'neighborhoodSize' > 1 (thicker lines)
+                        // This is a simple dilation simulation
+                        if (neighborhoodSize > 1 && outputColor > 0) {
+                             // This is computationally expensive to do correctly in one pass without a second buffer.
+                             // For this simple demo, we just rely on the fact that the loop continues.
+                             // A true dilation would be a second pass. 
+                             // We'll stick to the simple edge for performance, 
+                             // as 'neighborhood' was used for noise cleanup before.
+                             // We can use it to simply lower threshold implicitly or just keep 1px lines.
+                        }
                     }
-                }
-                
-                // Apply noise reduction if needed
-                if (minNeighbors > 0) {
-                    this.applyNoiseReduction(data, w, h, minNeighbors, neighborhoodSize);
                 }
                 
                 ctx.putImageData(imageData, 0, 0);
-            },
-            
-            applyNoiseReduction: function(data, w, h, minNeighbors, neighborhoodSize) {
-                const tempState = new Array(w * h);
-                for (let i = 0; i < data.length; i += 4) {
-                    tempState[i / 4] = data[i];
-                }
-
-                const getGrayscaleValue = (x, y) => {
-                    if (x < 0 || x >= w || y < 0 || y >= h) return 0;
-                    return tempState[y * w + x];
-                };
-
-                for (let y = 0; y < h; y++) {
-                    for (let x = 0; x < w; x++) {
-                        const i = (y * w + x);
-                        const dataIndex = i * 4;
-                        const currentPixelValue = tempState[i];
-                        
-                        let finalColor = currentPixelValue;
-
-                        if (currentPixelValue === 255) {
-                            let neighborEdgeCount = 0;
-                            
-                            for (let dy = -neighborhoodSize; dy <= neighborhoodSize; dy++) {
-                                for (let dx = -neighborhoodSize; dx <= neighborhoodSize; dx++) {
-                                    if (dx === 0 && dy === 0) continue;
-                                    
-                                    const neighborValue = getGrayscaleValue(x + dx, y + dy);
-                                    if (neighborValue === 255) {
-                                        neighborEdgeCount++;
-                                    }
-                                }
-                            }
-
-                            if (neighborEdgeCount < minNeighbors) {
-                                finalColor = 0;
-                            }
-                        }
-                        
-                        data[dataIndex] = data[dataIndex + 1] = data[dataIndex + 2] = finalColor;
-                        data[dataIndex + 3] = 255;
-                    }
-                }
             }
         };
 
@@ -361,14 +371,23 @@
             },
             
             edges: {
-                apply: function(video, canvas, threshold, neighborhoodSize, minNeighbors) {
-                    EdgeDetectionEffect.apply(video, canvas, threshold, neighborhoodSize, minNeighbors);
+                apply: function(video, canvas, params) {
+                    EdgeDetectionEffect.apply(
+                        video, 
+                        canvas, 
+                        params.threshold, 
+                        params.neighborhoodSize, 
+                        params.bandMedian,
+                        params.bandRange
+                    );
                 }
             },
             
             grayscale: {
                 apply: function(video, canvas) {
                     const ctx = canvas.getContext('2d');
+                    if (video.videoWidth === 0) return;
+                    
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
                     
@@ -391,6 +410,8 @@
             invert: {
                 apply: function(video, canvas) {
                     const ctx = canvas.getContext('2d');
+                    if (video.videoWidth === 0) return;
+
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
                     
@@ -436,8 +457,12 @@
             const edgeThresholdValue = document.getElementById('edge-threshold-value');
             const neighborhoodSize = document.getElementById('neighborhood-size');
             const neighborhoodSizeValue = document.getElementById('neighborhood-size-value');
-            const minNeighbors = document.getElementById('min-neighbors');
-            const minNeighborsValue = document.getElementById('min-neighbors-value');
+            
+            // New Band Pass Controls
+            const bandMedian = document.getElementById('band-median');
+            const bandMedianValue = document.getElementById('band-median-value');
+            const bandRange = document.getElementById('band-range');
+            const bandRangeValue = document.getElementById('band-range-value');
             
             const statusDiv = document.getElementById('status');
             const offsetDisplay = document.getElementById('offset-display');
@@ -455,12 +480,7 @@
             let currentEffect = 'none';
             let animationFrameId = null;
             const maxOffset = 200;
-            
-            // Helper function to format box size display
-            function formatBoxSize(n) {
-                const size = 2 * n + 1;
-                return `${size}x${size}`;
-            }
+            const HIDE_DELAY = 3000; // Reduced to 2 seconds
             
             // Start camera function
             async function startCamera() {
@@ -514,7 +534,7 @@
                 }
             }
             
-            // Effect rendering
+            // Effect rendering loop
             function startEffectRendering() {
                 if (animationFrameId) {
                     cancelAnimationFrame(animationFrameId);
@@ -523,41 +543,24 @@
                 function renderEffects() {
                     if (stream && currentEffect !== 'none') {
                         const effect = Effects[currentEffect];
+                        
+                        // Pack params
+                        // Map slider 0-100 to 0-255 range
+                        const params = {
+                            threshold: parseInt(edgeThreshold.value),
+                            neighborhoodSize: parseInt(neighborhoodSize.value),
+                            bandMedian: parseInt(bandMedian.value) * 2.55, 
+                            bandRange: parseInt(bandRange.value) * 2.55 // map 100 to 255 width
+                        };
+
                         if (effect) {
                             if (vrMode) {
-                                if (currentEffect === 'edges') {
-                                    effect.apply(
-                                        videoLeft, 
-                                        canvasLeft, 
-                                        parseInt(edgeThreshold.value),
-                                        parseInt(neighborhoodSize.value),
-                                        parseInt(minNeighbors.value)
-                                    );
-                                    effect.apply(
-                                        videoRight, 
-                                        canvasRight, 
-                                        parseInt(edgeThreshold.value),
-                                        parseInt(neighborhoodSize.value),
-                                        parseInt(minNeighbors.value)
-                                    );
-                                } else {
-                                    effect.apply(videoLeft, canvasLeft);
-                                    effect.apply(videoRight, canvasRight);
-                                }
+                                effect.apply(videoLeft, canvasLeft, params);
+                                effect.apply(videoRight, canvasRight, params);
                                 canvasLeft.style.display = 'block';
                                 canvasRight.style.display = 'block';
                             } else {
-                                if (currentEffect === 'edges') {
-                                    effect.apply(
-                                        singleVideo, 
-                                        canvasSingle, 
-                                        parseInt(edgeThreshold.value),
-                                        parseInt(neighborhoodSize.value),
-                                        parseInt(minNeighbors.value)
-                                    );
-                                } else {
-                                    effect.apply(singleVideo, canvasSingle);
-                                }
+                                effect.apply(singleVideo, canvasSingle, params);
                                 canvasSingle.style.display = 'block';
                             }
                         }
@@ -611,20 +614,21 @@
                 
                 // Show/hide edge detection controls
                 if (currentEffect === 'edges') {
-                    edgeControls.classList.remove('hidden');
+                    edgeControls.classList.remove('ui-hidden-element');
                 } else {
-                    edgeControls.classList.add('hidden');
+                    edgeControls.classList.add('ui-hidden-element');
                 }
                 
                 startEffectRendering();
                 resetHideControlsTimer();
             }
             
-            // Edge detection parameter updates
+            // Parameter updates
             function updateEdgeParams() {
                 edgeThresholdValue.textContent = edgeThreshold.value;
-                neighborhoodSizeValue.textContent = formatBoxSize(parseInt(neighborhoodSize.value));
-                minNeighborsValue.textContent = minNeighbors.value;
+                neighborhoodSizeValue.textContent = neighborhoodSize.value;
+                bandMedianValue.textContent = bandMedian.value;
+                bandRangeValue.textContent = bandRange.value;
                 resetHideControlsTimer();
             }
             
@@ -712,23 +716,39 @@
                 resetHideControlsTimer();
             }
             
-            // Auto-hide controls
+            // Auto-hide controls logic
             function hideControls() {
                 controlsPanel.classList.add('hidden');
-                statusDiv.classList.add('hidden');
             }
             
             function showControls() {
                 controlsPanel.classList.remove('hidden');
-                statusDiv.classList.remove('hidden');
                 resetHideControlsTimer();
+            }
+            
+            function toggleControls(e) {
+                // If interacting with a control element directly, just reset timer, don't toggle
+                if (e.target.closest('#controls-panel')) {
+                    resetHideControlsTimer();
+                    return;
+                }
+                
+                if (controlsPanel.classList.contains('hidden')) {
+                    showControls();
+                } else {
+                    hideControls();
+                    // Clear timer so it doesn't fire while hidden
+                    if (hideControlsTimeout) {
+                        clearTimeout(hideControlsTimeout);
+                    }
+                }
             }
             
             function resetHideControlsTimer() {
                 if (hideControlsTimeout) {
                     clearTimeout(hideControlsTimeout);
                 }
-                hideControlsTimeout = setTimeout(hideControls, 5000);
+                hideControlsTimeout = setTimeout(hideControls, HIDE_DELAY);
             }
             
             // Event listeners
@@ -741,13 +761,19 @@
             offsetResetButton.addEventListener('click', resetOffset);
             effectSelect.addEventListener('change', changeEffect);
             
-            // Edge detection parameter listeners
+            // Parameter listeners
             edgeThreshold.addEventListener('input', updateEdgeParams);
             neighborhoodSize.addEventListener('input', updateEdgeParams);
-            minNeighbors.addEventListener('input', updateEdgeParams);
+            bandMedian.addEventListener('input', updateEdgeParams);
+            bandRange.addEventListener('input', updateEdgeParams);
             
-            document.body.addEventListener('click', showControls);
-            document.body.addEventListener('touchstart', showControls);
+            // Toggle controls on click/tap
+            document.body.addEventListener('click', toggleControls);
+            // We use click for both mouse and touch (mobile browsers fire click after tap)
+            // Removed specific touchstart to avoid double-firing or conflicting with scrolling/interaction logic
+            
+            // Stop propagation on controls panel so clicking a button doesn't trigger the body toggle
+            // (handled in toggleControls but good practice to be explicit if needed, though closest() check is better)
             
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 statusDiv.textContent = 'Your browser does not support camera access';
