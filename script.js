@@ -467,9 +467,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Effect handling
     function changeEffect() {
-        // Free RAM buffer if we switch away from long exposure
+        // Free RAM buffer if we switch away from heavy effects
         if (currentEffect === 'longExposure' && effectSelect.value !== 'longExposure') {
             Effects.longExposure.reset();
+        }
+        if (currentEffect === 'motion' && effectSelect.value !== 'motion') {
+            Effects.motion.reset();
         }
 
         currentEffect = effectSelect.value;
@@ -478,12 +481,15 @@ document.addEventListener('DOMContentLoaded', function() {
         // Hide all control panels first
         edgeControls.classList.add('ui-hidden-element');
         longExposureControls.classList.add('ui-hidden-element');
+        motionControls.classList.add('ui-hidden-element'); // <-- Add this line
         
         // Show specific controls based on selected effect
         if (currentEffect === 'edges') {
             edgeControls.classList.remove('ui-hidden-element');
         } else if (currentEffect === 'longExposure') {
             longExposureControls.classList.remove('ui-hidden-element');
+        } else if (currentEffect === 'motion') {
+            motionControls.classList.remove('ui-hidden-element'); // <-- Add this block
         }
         
         startEffectRendering();
@@ -497,6 +503,7 @@ document.addEventListener('DOMContentLoaded', function() {
         bandMedianValue.textContent = bandMedian.value;
         bandRangeValue.textContent = bandRange.value;
         blendFramesValue.textContent = blendFrames.value;
+        motionDelayValue.textContent = motionDelay.value;
         resetHideControlsTimer();
     }
     
@@ -634,6 +641,7 @@ document.addEventListener('DOMContentLoaded', function() {
     bandRange.addEventListener('input', updateEffectParams);
     blendFrames.addEventListener('input', updateEffectParams);
     blendMode.addEventListener('change', updateEffectParams);
+    motionDelay.addEventListener('input', updateEffectParams);
     // Toggle controls on click/tap
     document.body.addEventListener('click', toggleControls);
     
