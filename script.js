@@ -202,26 +202,76 @@ const Effects = {
         }
     },
     
-    invert: {
-        apply: function(video, canvas) {
+    motion: {
+        contexts: {},
+        
+        apply: function(video, canvas, params) {
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (video.videoWidth === 0) return;
+            const w = video.videoWidth;
+            const h = video.videoHeight;
+            if (w === 0 || h === 0) return;
 
-            if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
-            if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
-            
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
-            
-            for (let i = 0; i < data.length; i += 4) {
-                data[i] = 255 - data[i];
-                data[i + 1] = 255 - data[i + 1];
-                data[i + 2] = 255 - data[i + 2];
+            if (canvas.width !== w) canvas.width = w;
+            if (canvas.height !== h) canvas.height = h;
+
+            const delayFrames = params.motionDelay;
+            const maxBufferSize = 60; // Max slider value
+            const numPixels = w * h * 4;
+
+            // Initialize buffer for this canvas if it doesn't exist or size changed
+            if (!this.contexts[canvas.id] || this.contexts[canvas.id].w !== w) {
+                this.contexts[canvas.id] = {
+                    w: w, 
+                    h: h, 
+                    buffer: Array(maxBufferSize).fill(null).map(() => new Uint8Array(numPixels)),
+                    index: 0,
+                    frameCount: 0
+                };
             }
+
+            const state = this.contexts[canvas.id];
             
-            ctx.putImageData(imageData, 0, 0);
+            ctx.drawImage(video, 0, 0, w, h);
+            const currentImageData = ctx.getImageData(0, 0, w, h);
+            const currentData = currentImageData.data;
+            
+            // Save current frame into the ring buffer
+            const currentBuffer = state.buffer[state.index];
+            for (let i = 0; i < numPixels; i++) {
+                currentBuffer[i] = currentData[i];
+            }
+
+            // Figure out which frame to compare against
+            let delayedIndex = state.index - delayFrames;
+            if (delayedIndex < 0) {
+                delayedIndex += maxBufferSize;
+            }
+
+            // If we haven't stored enough frames yet, use the oldest available frame
+            if (state.frameCount < delayFrames) {
+                delayedIndex = (state.index - state.frameCount + maxBufferSize) % maxBufferSize;
+                if (state.frameCount === 0) delayedIndex = state.index;
+            }
+
+            const delayedBuffer = state.buffer[delayedIndex];
+
+            // Motion extraction: Output = |Current - Delayed|
+            for (let i = 0; i < numPixels; i += 4) {
+                currentData[i]     = Math.abs(currentData[i] - delayedBuffer[i]);         // R
+                currentData[i + 1] = Math.abs(currentData[i + 1] - delayedBuffer[i + 1]); // G
+                currentData[i + 2] = Math.abs(currentData[i + 2] - delayedBuffer[i + 2]); // B
+                currentData[i + 3] = 255; // Alpha
+            }
+
+            // Advance buffer index
+            state.index = (state.index + 1) % maxBufferSize;
+            if (state.frameCount < maxBufferSize) state.frameCount++;
+
+            ctx.putImageData(currentImageData, 0, 0);
+        },
+        
+        reset: function() {
+            this.contexts = {}; 
         }
     }
 };
@@ -270,6 +320,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const cameraDisplay = document.getElementById('camera-display');
     const effectDisplay = document.getElementById('effect-display');
     const controlsPanel = document.getElementById('controls-panel');
+
+    // Motion Extraction Controls
+    const motionControls = document.getElementById('motion-controls');
+    const motionDelay = document.getElementById('motion-delay');
+    const motionDelayValue = document.getElementById('motion-delay-value');
     
     const videoContainer = document.getElementById('video-container');
     
@@ -352,7 +407,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     bandMedian: parseInt(bandMedian.value) * 2.55, 
                     bandRange: parseInt(bandRange.value) * 2.55,
                     blendFrames: parseInt(blendFrames.value),
-                    blendMode: blendMode.value
+                    blendMode: blendMode.value,
+                    motionDelay: parseInt(motionDelay.value)
                 };
 
                 if (effect) {
