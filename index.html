@@ -92,7 +92,11 @@
         <div id="motion-controls" class="effect-controls ui-hidden-element">
             <div class="slider-container">
                 <label for="motion-delay">Motion Delay (Frames): <span id="motion-delay-value">10</span></label>
-                <input type="range" id="motion-delay" min="1" max="60" value="10" step="1">
+                <input type="range" id="motion-delay" min="0" max="60" value="10" step="1">
+            </div>
+            <div class="slider-container">
+                <label for="motion-delay-seconds">Motion Delay (Seconds): <span id="motion-delay-seconds-value">0</span>s</label>
+                <input type="range" id="motion-delay-seconds" min="0" max="20" value="0" step="0.5">
             </div>
         </div>
         
