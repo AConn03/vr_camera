@@ -214,22 +214,35 @@ const Effects = {
             if (canvas.width !== w) canvas.width = w;
             if (canvas.height !== h) canvas.height = h;
 
-            const delayFrames = params.motionDelay;
-            const maxBufferSize = 60; // Max slider value
+            // Dynamically detect frame rate if accessible; fallback to a standard 30 FPS
+            const fps = (video.srcObject && video.srcObject.getVideoTracks()[0]?.getSettings()?.frameRate) || 30;
+
+            // Calculate total delay in frames (frames slider + seconds slider converted to frames)
+            const delayFrames = Math.max(0, Math.round(params.motionDelay + (params.motionDelaySeconds * fps)));
+            
             const numPixels = w * h * 4;
+            const requiredBufferSize = delayFrames + 1;
 
             // Initialize buffer for this canvas if it doesn't exist or size changed
-            if (!this.contexts[canvas.id] || this.contexts[canvas.id].w !== w) {
+            if (!this.contexts[canvas.id] || 
+                this.contexts[canvas.id].w !== w || 
+                this.contexts[canvas.id].h !== h) {
+                
                 this.contexts[canvas.id] = {
                     w: w, 
                     h: h, 
-                    buffer: Array(maxBufferSize).fill(null).map(() => new Uint8Array(numPixels)),
+                    buffer: [], // Grow dynamically to save memory
                     index: 0,
                     frameCount: 0
                 };
             }
 
             const state = this.contexts[canvas.id];
+
+            // Safely grow the dynamic frame buffer only to the size required by current delay settings
+            while (state.buffer.length < requiredBufferSize) {
+                state.buffer.push(new Uint8Array(numPixels));
+            }
             
             ctx.drawImage(video, 0, 0, w, h);
             const currentImageData = ctx.getImageData(0, 0, w, h);
@@ -237,19 +250,17 @@ const Effects = {
             
             // Save current frame into the ring buffer
             const currentBuffer = state.buffer[state.index];
-            for (let i = 0; i < numPixels; i++) {
-                currentBuffer[i] = currentData[i];
-            }
+            currentBuffer.set(currentData);
 
             // Figure out which frame to compare against
             let delayedIndex = state.index - delayFrames;
             if (delayedIndex < 0) {
-                delayedIndex += maxBufferSize;
+                delayedIndex += requiredBufferSize;
             }
 
             // If we haven't stored enough frames yet, use the oldest available frame
             if (state.frameCount < delayFrames) {
-                delayedIndex = (state.index - state.frameCount + maxBufferSize) % maxBufferSize;
+                delayedIndex = (state.index - state.frameCount + requiredBufferSize) % requiredBufferSize;
                 if (state.frameCount === 0) delayedIndex = state.index;
             }
 
@@ -264,8 +275,8 @@ const Effects = {
             }
 
             // Advance buffer index
-            state.index = (state.index + 1) % maxBufferSize;
-            if (state.frameCount < maxBufferSize) state.frameCount++;
+            state.index = (state.index + 1) % requiredBufferSize;
+            if (state.frameCount < requiredBufferSize) state.frameCount++;
 
             ctx.putImageData(currentImageData, 0, 0);
         },
@@ -325,6 +336,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const motionControls = document.getElementById('motion-controls');
     const motionDelay = document.getElementById('motion-delay');
     const motionDelayValue = document.getElementById('motion-delay-value');
+    const motionDelaySeconds = document.getElementById('motion-delay-seconds');
+    const motionDelaySecondsValue = document.getElementById('motion-delay-seconds-value');
     
     const videoContainer = document.getElementById('video-container');
     
@@ -408,7 +421,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     bandRange: parseInt(bandRange.value) * 2.55,
                     blendFrames: parseInt(blendFrames.value),
                     blendMode: blendMode.value,
-                    motionDelay: parseInt(motionDelay.value)
+                    motionDelay: parseInt(motionDelay.value),
+                    motionDelaySeconds: parseFloat(motionDelaySeconds.value)
                 };
 
                 if (effect) {
@@ -481,7 +495,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Hide all control panels first
         edgeControls.classList.add('ui-hidden-element');
         longExposureControls.classList.add('ui-hidden-element');
-        motionControls.classList.add('ui-hidden-element'); // <-- Add this line
+        motionControls.classList.add('ui-hidden-element');
         
         // Show specific controls based on selected effect
         if (currentEffect === 'edges') {
@@ -489,7 +503,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (currentEffect === 'longExposure') {
             longExposureControls.classList.remove('ui-hidden-element');
         } else if (currentEffect === 'motion') {
-            motionControls.classList.remove('ui-hidden-element'); // <-- Add this block
+            motionControls.classList.remove('ui-hidden-element');
         }
         
         startEffectRendering();
@@ -504,6 +518,7 @@ document.addEventListener('DOMContentLoaded', function() {
         bandRangeValue.textContent = bandRange.value;
         blendFramesValue.textContent = blendFrames.value;
         motionDelayValue.textContent = motionDelay.value;
+        motionDelaySecondsValue.textContent = motionDelaySeconds.value;
         resetHideControlsTimer();
     }
     
@@ -596,6 +611,7 @@ document.addEventListener('DOMContentLoaded', function() {
         controlsPanel.classList.add('hidden');
     }
     
+    // Tap interaction tracker
     function showControls() {
         controlsPanel.classList.remove('hidden');
         resetHideControlsTimer();
@@ -642,6 +658,8 @@ document.addEventListener('DOMContentLoaded', function() {
     blendFrames.addEventListener('input', updateEffectParams);
     blendMode.addEventListener('change', updateEffectParams);
     motionDelay.addEventListener('input', updateEffectParams);
+    motionDelaySeconds.addEventListener('input', updateEffectParams);
+    
     // Toggle controls on click/tap
     document.body.addEventListener('click', toggleControls);
     
