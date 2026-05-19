@@ -115,12 +115,18 @@ const Effects = {
             if (canvas.width !== w) canvas.width = w;
             if (canvas.height !== h) canvas.height = h;
 
-            const maxFrames = params.blendFrames;
+            // Dynamically detect frame rate if accessible; fallback to a standard 30 FPS
+            const fps = (video.srcObject && video.srcObject.getVideoTracks()[0]?.getSettings()?.frameRate) || 30;
+
+            // Calculate total blend frames: frames slider + (seconds slider * fps)
+            // Clamp minimum to 1 frame to ensure math calculations don't divide by zero
+            const maxFrames = Math.max(1, Math.round(params.blendFrames + (params.blendSeconds * fps)));
             const mode = params.blendMode || 'average';
             const numPixels = w * h * 4;
 
             if (!this.contexts[canvas.id] || 
                 this.contexts[canvas.id].w !== w || 
+                this.contexts[canvas.id].h !== h ||
                 this.contexts[canvas.id].maxFrames !== maxFrames) {
                 
                 this.contexts[canvas.id] = {
@@ -324,6 +330,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const longExposureControls = document.getElementById('long-exposure-controls');
     const blendFrames = document.getElementById('blend-frames');
     const blendFramesValue = document.getElementById('blend-frames-value');
+    const blendSeconds = document.getElementById('blend-seconds');
+    const blendSecondsValue = document.getElementById('blend-seconds-value');
     const blendMode = document.getElementById('blend-mode');
     
     const statusDiv = document.getElementById('status');
@@ -420,6 +428,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     bandMedian: parseInt(bandMedian.value) * 2.55, 
                     bandRange: parseInt(bandRange.value) * 2.55,
                     blendFrames: parseInt(blendFrames.value),
+                    blendSeconds: parseFloat(blendSeconds.value),
                     blendMode: blendMode.value,
                     motionDelay: parseInt(motionDelay.value),
                     motionDelaySeconds: parseFloat(motionDelaySeconds.value)
@@ -517,6 +526,7 @@ document.addEventListener('DOMContentLoaded', function() {
         bandMedianValue.textContent = bandMedian.value;
         bandRangeValue.textContent = bandRange.value;
         blendFramesValue.textContent = blendFrames.value;
+        blendSecondsValue.textContent = blendSeconds.value;
         motionDelayValue.textContent = motionDelay.value;
         motionDelaySecondsValue.textContent = motionDelaySeconds.value;
         resetHideControlsTimer();
@@ -656,6 +666,7 @@ document.addEventListener('DOMContentLoaded', function() {
     bandMedian.addEventListener('input', updateEffectParams);
     bandRange.addEventListener('input', updateEffectParams);
     blendFrames.addEventListener('input', updateEffectParams);
+    blendSeconds.addEventListener('input', updateEffectParams);
     blendMode.addEventListener('change', updateEffectParams);
     motionDelay.addEventListener('input', updateEffectParams);
     motionDelaySeconds.addEventListener('input', updateEffectParams);
