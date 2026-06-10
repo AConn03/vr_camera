@@ -36,7 +36,10 @@
             <button id="start-camera">Start Camera</button>
             <button id="stop-camera" disabled>Stop Camera</button>
             <button id="toggle-vr">Enable VR View</button>
-            <button id="switch-camera">Switch Camera</button>
+            <!-- Changed to dropdown for exact camera lens selection -->
+            <select id="camera-select">
+                <option value="">Select Camera</option>
+            </select>
         </div>
         
         <div class="controls-row">
@@ -107,12 +110,6 @@
         
         <div class="info-row">
             <span id="offset-display">Offset: 0px</span>
-            <span id="camera-display">Camera: Back</span>
             <span id="effect-display">Effect: None</span>
         </div>
     </div>
-
-    <script src="script.js"></script>
-
-</body>
-</html>
