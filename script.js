@@ -307,7 +307,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const startButton = document.getElementById('start-camera');
     const stopButton = document.getElementById('stop-camera');
     const toggleVRButton = document.getElementById('toggle-vr');
-    const switchCameraButton = document.getElementById('switch-camera');
+    const cameraSelect = document.getElementById('camera-select');
+    
     const offsetInButton = document.getElementById('offset-in');
     const offsetOutButton = document.getElementById('offset-out');
     const offsetResetButton = document.getElementById('offset-reset');
@@ -336,7 +337,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const statusDiv = document.getElementById('status');
     const offsetDisplay = document.getElementById('offset-display');
-    const cameraDisplay = document.getElementById('camera-display');
     const effectDisplay = document.getElementById('effect-display');
     const controlsPanel = document.getElementById('controls-panel');
 
@@ -353,31 +353,95 @@ document.addEventListener('DOMContentLoaded', function() {
     let vrMode = false;
     let hideControlsTimeout = null;
     let currentOffset = 0;
-    let usingBackCamera = true;
+    let currentDeviceId = null;
     let currentEffect = 'none';
     let animationFrameId = null;
     const maxOffset = 200;
     const HIDE_DELAY = 3000; 
+
+    // Populate Dropdown List of Cameras
+    async function populateCameras() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+        
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            
+            cameraSelect.innerHTML = '';
+            
+            if (videoDevices.length === 0) {
+                cameraSelect.innerHTML = '<option value="">No cameras found</option>';
+                return;
+            }
+            
+            videoDevices.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                // device.label might be empty until getUserMedia is granted once
+                option.text = device.label || `Camera ${index + 1}`;
+                
+                if (device.deviceId === currentDeviceId) {
+                    option.selected = true;
+                }
+                
+                cameraSelect.appendChild(option);
+            });
+        } catch (e) {
+            console.error("Error enumerating devices:", e);
+        }
+    }
     
-    // Start camera function
-    async function startCamera() {
+    // Start camera function (takes an optional deviceId for exact lens selection)
+    async function startCamera(deviceId = null) {
         try {
             statusDiv.textContent = 'Requesting camera access...';
             
-            stream = await navigator.mediaDevices.getUserMedia({
+            // Stop existing stream if running
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            
+            const constraints = {
                 video: {
                     width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                    facingMode: usingBackCamera ? { exact: 'environment' } : 'user'
+                    height: { ideal: 1080 }
                 },
                 audio: false
-            });
+            };
+            
+            if (deviceId) {
+                constraints.video.deviceId = { exact: deviceId };
+            } else if (cameraSelect.value) {
+                constraints.video.deviceId = { exact: cameraSelect.value };
+            } else {
+                // Default to environment facing camera on initial load
+                constraints.video.facingMode = { ideal: 'environment' };
+            }
+            
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            // Get currently active track and note its deviceId
+            const track = stream.getVideoTracks()[0];
+            if (track) {
+                currentDeviceId = track.getSettings().deviceId;
+            }
+
+            // Now that permissions are granted, labels will be available
+            await populateCameras();
+
+            // Ensure dropdown matches active camera
+            if (currentDeviceId) {
+                cameraSelect.value = currentDeviceId;
+            }
             
             setupVideoStream();
             startEffectRendering();
             
         } catch (error) {
-            console.error('Error accessing back camera:', error);
+            console.error('Error accessing specific camera:', error);
+            if (deviceId) {
+                statusDiv.textContent = 'Requested camera failed, trying fallback...';
+            }
             tryFallbackCamera();
         }
     }
@@ -390,21 +454,30 @@ document.addEventListener('DOMContentLoaded', function() {
         statusDiv.textContent = 'Camera active';
         startButton.disabled = true;
         stopButton.disabled = false;
-        updateCameraDisplay();
         resetHideControlsTimer();
     }
     
     async function tryFallbackCamera() {
         try {
-            statusDiv.textContent = 'Back camera not available, trying any camera...';
+            statusDiv.textContent = 'Trying any available camera...';
             stream = await navigator.mediaDevices.getUserMedia({
                 video: true,
                 audio: false
             });
             
+            const track = stream.getVideoTracks()[0];
+            if (track) {
+                currentDeviceId = track.getSettings().deviceId;
+            }
+            
+            await populateCameras();
+            
+            if (currentDeviceId) {
+                cameraSelect.value = currentDeviceId;
+            }
+            
             setupVideoStream();
-            usingBackCamera = false;
-            updateCameraDisplay();
+            startEffectRendering();
         } catch (fallbackError) {
             console.error('Error accessing any camera:', fallbackError);
             statusDiv.textContent = `Error: ${fallbackError.message}`;
@@ -456,37 +529,12 @@ document.addEventListener('DOMContentLoaded', function() {
         renderEffects();
     }
     
-    // Switch camera function
-    async function switchCamera() {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-            usingBackCamera = !usingBackCamera;
-            
-            try {
-                statusDiv.textContent = 'Switching camera...';
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                        facingMode: usingBackCamera ? { exact: 'environment' } : 'user'
-                    },
-                    audio: false
-                });
-                
-                setupVideoStream();
-            } catch (error) {
-                console.error('Error switching camera:', error);
-                statusDiv.textContent = `Error switching camera: ${error.message}`;
-                usingBackCamera = !usingBackCamera;
-                updateCameraDisplay();
-            }
+    // Handle Dropdown Camera Switch
+    cameraSelect.addEventListener('change', () => {
+        if (stream && cameraSelect.value) {
+            startCamera(cameraSelect.value);
         }
-    }
-    
-    function updateCameraDisplay() {
-        cameraDisplay.textContent = `Camera: ${usingBackCamera ? 'Back' : 'Front'}`;
-        switchCameraButton.textContent = `Switch to ${usingBackCamera ? 'Front' : 'Back'} Camera`;
-    }
+    });
     
     // Effect handling
     function changeEffect() {
@@ -619,16 +667,18 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-hide controls logic
     function hideControls() {
         controlsPanel.classList.add('hidden');
+        statusDiv.classList.add('hidden'); // Also hide the status banner!
     }
     
     // Tap interaction tracker
     function showControls() {
         controlsPanel.classList.remove('hidden');
+        statusDiv.classList.remove('hidden'); // Show status banner again
         resetHideControlsTimer();
     }
     
     function toggleControls(e) {
-        if (e.target.closest('#controls-panel')) {
+        if (e.target.closest('#controls-panel') || e.target.closest('#status')) {
             resetHideControlsTimer();
             return;
         }
@@ -651,10 +701,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Event listeners
-    startButton.addEventListener('click', startCamera);
+    startButton.addEventListener('click', () => startCamera());
     stopButton.addEventListener('click', stopCamera);
     toggleVRButton.addEventListener('click', toggleVRMode);
-    switchCameraButton.addEventListener('click', switchCamera);
     offsetInButton.addEventListener('click', increaseOffset);
     offsetOutButton.addEventListener('click', decreaseOffset);
     offsetResetButton.addEventListener('click', resetOffset);
@@ -678,10 +727,11 @@ document.addEventListener('DOMContentLoaded', function() {
         statusDiv.textContent = 'Your browser does not support camera access';
         startButton.disabled = true;
         toggleVRButton.disabled = true;
-        switchCameraButton.disabled = true;
+        cameraSelect.disabled = true;
     }
     
     // Initialize UI
     updateEffectParams();
     updateVRMode();
+    populateCameras(); // Try to populate initially, might not have labels until camera starts
 });
