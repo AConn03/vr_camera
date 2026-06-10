@@ -298,6 +298,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const videoLeft = document.getElementById('video-left');
     const videoRight = document.getElementById('video-right');
     const singleVideo = document.getElementById('single-video');
+    const toggleFitButton = document.getElementById('toggle-fit'); 
     const canvasLeft = document.getElementById('canvas-left');
     const canvasRight = document.getElementById('canvas-right');
     const canvasSingle = document.getElementById('canvas-single');
@@ -351,6 +352,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     let stream = null;
     let vrMode = false;
+    let isFitMode = false; 
     let hideControlsTimeout = null;
     let currentOffset = 0;
     let currentDeviceId = null;
@@ -611,6 +613,25 @@ document.addEventListener('DOMContentLoaded', function() {
         updateVRMode();
         resetHideControlsTimer();
     }
+        // Toggle Video Scaling Fit Mode function
+    function toggleFitMode() {
+        isFitMode = !isFitMode;
+        
+        if (isFitMode) {
+            videoLeft.classList.add('fit-mode');
+            videoRight.classList.add('fit-mode');
+            singleVideo.classList.add('fit-mode');
+            toggleFitButton.textContent = 'Crop to Fill Screen';
+            statusDiv.textContent = 'Auto-Fit View Enabled';
+        } else {
+            videoLeft.classList.remove('fit-mode');
+            videoRight.classList.remove('fit-mode');
+            singleVideo.classList.remove('fit-mode');
+            toggleFitButton.textContent = 'Fit Entire Screen';
+            statusDiv.textContent = 'Crop-to-Fill View Enabled';
+        }
+        resetHideControlsTimer();
+    }
     
     function updateVRMode() {
         if (vrMode) {
@@ -705,6 +726,7 @@ document.addEventListener('DOMContentLoaded', function() {
     startButton.addEventListener('click', () => startCamera());
     stopButton.addEventListener('click', stopCamera);
     toggleVRButton.addEventListener('click', toggleVRMode);
+    toggleFitButton.addEventListener('click', toggleFitMode);
     offsetInButton.addEventListener('click', increaseOffset);
     offsetOutButton.addEventListener('click', decreaseOffset);
     offsetResetButton.addEventListener('click', resetOffset);
