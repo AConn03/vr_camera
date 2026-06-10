@@ -677,6 +677,7 @@ document.addEventListener('DOMContentLoaded', function() {
         resetHideControlsTimer();
     }
     
+    // Toggle controls on click/tap
     function toggleControls(e) {
         if (e.target.closest('#controls-panel') || e.target.closest('#status')) {
             resetHideControlsTimer();
