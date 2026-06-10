@@ -74,6 +74,12 @@ body {
     pointer-events: none;
 }
 
+/* Added to hide the status banner when UI hides */
+#status.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
 #controls-panel {
     position: fixed;
     bottom: 0;
@@ -167,6 +173,7 @@ select {
     font-size: 16px;
     backdrop-filter: blur(5px);
     min-width: 150px;
+    cursor: pointer;
 }
 
 option {
